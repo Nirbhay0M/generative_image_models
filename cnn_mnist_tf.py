@@ -1,11 +1,8 @@
 #!/usr/bin/env python
 
-import os
-import numpy as np
 import argparse,argcomplete
 
 import tensorflow as tf
-# import prettytensor as pt
 
 # MNIST Data
 from tensorflow.examples.tutorials.mnist import input_data
@@ -13,14 +10,17 @@ mnist = input_data.read_data_sets("/tmp/data/", one_hot=True)
 
 # Logging
 import logging
-logging.basicConfig(filename='logfile.log',level=logging.DEBUG,
-    format='%(asctime)s :: %(message)s', datefmt='%m/%d/%Y %I:%M:%S %p')
+logging.basicConfig(level=logging.DEBUG, 
+    format='%(asctime)s :: %(message)s', 
+    datefmt='%m/%d/%Y %I:%M:%S %p')#,
+    #filename='logfile.log')
 
 # Parameters
 learning_rate = 0.001
 training_iters = 10000
 batch_size = 128
 display_step = 10
+restore_vars = False
 
 # Network Parameters
 n_input = 784 # MNIST data input (img shape: 28*28)
@@ -107,22 +107,29 @@ init = tf.initialize_all_variables()
 # Op to save and restore variables
 saver = tf.train.Saver()
 
-def AssignArguments(args):
+def assignArgs(args):
     global learning_rate
     global training_iters
     global batch_size
     global display_step
+    global restore_vars
 
     learning_rate   = args.learning_rate 
     training_iters  = args.training_iters
     batch_size      = args.batch_size
     display_step    = args.display_step
 
+    restore_vars    = bool(args.restore_vars)
+
     return
 
 def parseArgs():
     parser = argparse.ArgumentParser(description="Architecture Parameters")
 
+    #--- Restoring saved variables
+    parser.add_argument('-res','--restore-vars',default=0,type=int)
+
+    #--- Training Params
     parser.add_argument('-lr','--learning-rate',default=0.001,type=float)
     parser.add_argument('-bs','--batch-size',default=128,type=int)
     parser.add_argument('-it','--training-iters',default=10000,type=int)
@@ -136,7 +143,7 @@ def parseArgs():
     args = parser.parse_args()
 
     logging.debug("Args:"+str(args))
-    AssignArguments(args)
+    assignArgs(args)
 
     return args
 
@@ -145,34 +152,39 @@ if __name__=='__main__':
 
     parseArgs()
 
+    save_model_name = "model_cnn.ckpt"
+
     # Launch the graph
     with tf.Session() as sess:
-        sess.run(init)
 
-        # Path from where variables will be saved and loaded
-        save_path = saver.save(sess,"./tmp/model.ckpt")
+        if restore_vars:    
+            saver.restore(sess,"./tmp/"+save_model_name)
+            logging.info("Model Restored!")
 
-        step = 1
-        # Keep training until reach max iterations
-        while step * batch_size < training_iters:
-            batch_x, batch_y = mnist.train.next_batch(batch_size)
-            # Run optimization op (backprop)
-            sess.run(optimizer, feed_dict={x: batch_x, y: batch_y,
-                                           keep_prob: dropout})
-            if step % display_step == 0:
-                # Calculate batch loss and accuracy
-                loss, acc = sess.run([cost, accuracy], feed_dict={x: batch_x,
-                                                                  y: batch_y,
-                                                                  keep_prob: 1.})
-                print "Iter " + str(step*batch_size) + ", Minibatch Loss= " + \
-                      "{:.6f}".format(loss) + ", Training Accuracy= " + \
-                      "{:.5f}".format(acc)
-            step += 1
-        print "Optimization Finished!"
+        else:
+            sess.run(init)
 
-        # Save variables to a file
+            step = 1
+            # Keep training until reach max iterations
+            while step * batch_size < training_iters:
+                batch_x, batch_y = mnist.train.next_batch(batch_size)
+                # Run optimization op (backprop)
+                sess.run(optimizer, feed_dict={x: batch_x, y: batch_y,
+                                               keep_prob: dropout})
+                if step % display_step == 0:
+                    # Calculate batch loss and accuracy
+                    loss, acc = sess.run([cost, accuracy], feed_dict={x: batch_x,
+                                                                      y: batch_y,
+                                                                      keep_prob: 1.})
+                    print "Iter " + str(step*batch_size) + ", Minibatch Loss= " + \
+                          "{:.6f}".format(loss) + ", Training Accuracy= " + \
+                          "{:.5f}".format(acc)
+                step += 1
+            print "Optimization Finished!"
 
-        print("Model saved in file: %s" % save_path)
+            # Save variables to a file
+            save_path = saver.save(sess,"./tmp/"+save_model_name)
+            print("Model saved in file: %s" % save_path)
 
         # Calculate accuracy for 256 mnist test images
         print "Testing Accuracy:", \
