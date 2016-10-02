@@ -140,15 +140,13 @@ def decode(state,input):
 def write_no_attn(h_dec,conv_shape):
     # print "write got conv_shape:",conv_shape
     # conv_shape is (batch_size, B', A', n_filters)
-    decoded_img_size = conv_shape[1]*conv_shape[2]*conv_shape[3]
-
     with tf.variable_scope("write",reuse=DO_SHARE):
+        decoded_img_size = conv_shape[1]*conv_shape[2]*conv_shape[3]
         # return linear(h_dec_deconv,img_size)
         img_decoded = linear(h_dec,decoded_img_size)
-
-    img_deconv = conv2d_transpose("deconv",img_decoded,2,conv_shape,
-                        output_shape=[batch_size,B,A,1])
-    return tf.reshape(img_deconv,[batch_size,-1])
+        img_deconv = conv2d_transpose(img_decoded,2,conv_shape,
+                            output_shape=[batch_size,B,A,1])
+        return tf.reshape(img_deconv,[batch_size,-1])
 
 def write_attn(h_dec):
     with tf.variable_scope("writeW",reuse=DO_SHARE):
@@ -183,23 +181,24 @@ def conv2d(scope,x_input, strides):
         x_out = tf.reshape(x,[batch_size,-1])
         return tf.nn.relu(x_out),x.get_shape()
 
-def conv2d_transpose(scope, x_input, strides, conv_shape, output_shape):
+def conv2d_transpose(x_input, strides, conv_shape, output_shape):
     x = tf.reshape(x_input,conv_shape)
 
-    with tf.variable_scope(scope,reuse=DO_SHARE):
-        W = tf.get_variable("W_kernel_deconv",[kernel_height,kernel_width,1,n_filters],
-                            initializer=tf.random_normal_initializer())
-        b = tf.get_variable("b_kernel_deconv",[n_filters],
-                            initializer=tf.random_normal_initializer())
+    # with tf.variable_scope(scope,reuse=DO_SHARE):
+    W = tf.get_variable("W_kernel_deconv",[kernel_height,kernel_width,1,n_filters],
+                        initializer=tf.random_normal_initializer())
+    b = tf.get_variable("b_kernel_deconv",[n_filters],
+                        initializer=tf.random_normal_initializer())
 
-        x = tf.nn.bias_add(x, b)
-        x_deconv = tf.nn.conv2d_transpose(x, W, strides=[1, strides, strides, 1],
-                                output_shape=output_shape, padding='SAME')
+    x = tf.nn.bias_add(x, b)
+    x_deconv = tf.nn.conv2d_transpose(x, W, strides=[1, strides, strides, 1],
+                            output_shape=output_shape, padding='SAME')
 
-        x_output = tf.reshape(x_deconv,[batch_size,-1])
+    x_output = tf.reshape(x_deconv,[batch_size,-1])
 
-        # return tf.nn.sigmoid(x_output)
-        return tf.nn.relu(x_output)
+    # return tf.nn.sigmoid(x_output)
+    return tf.nn.relu(x_output)
+    # return x_output
 
 ## STATE VARIABLES ## 
 
