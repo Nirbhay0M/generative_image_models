@@ -15,7 +15,7 @@ import numpy as np
 import os
 
 tf.flags.DEFINE_string("data_dir","./data/", "")
-tf.flags.DEFINE_string("save_suffix","cd_double_conv", "")
+tf.flags.DEFINE_string("save_suffix","cd_only_2conv_output", "")
 tf.flags.DEFINE_boolean("read_attn", False, "enable attention for reader")
 tf.flags.DEFINE_boolean("write_attn",False, "enable attention for writer")
 tf.flags.DEFINE_boolean("restore",False, "restore model")
@@ -41,7 +41,7 @@ batch_size=100 # training minibatch size
 train_iters=10000
 learning_rate=1e-3 # learning rate for optimizer
 eps=1e-8 # epsilon for numerical stability
-display_step = 1
+display_step = 100
 
 ## BUILD MODEL ## 
 
@@ -94,17 +94,18 @@ def read_no_attn(x,x_hat,h_dec_prev=None):
     # print "Shape:",shape
     x_1,shape = conv2d("conv2d_x_1",x,stride,32,shape2D=shape)
     # print "Shape:",shape
-    x_2,shape = conv2d("conv2d_x_2",x_1,stride,32,shape2D=shape)
+    x_2,shape = conv2d("conv2d_x_2",x_1,stride,64,shape2D=shape)
     # print "Shape:",shape
-    x_new = tf.concat(1,[x,x_1,x_2])
+    # x_new = tf.concat(1,[x,x_1,x_2])
 
     # assert False
     shape = (batch_size,B,A,1)
-    x_hat_1,shape = conv2d("conv2d_x_hat_1",x_hat,stride,64,shape2D=shape)
+    x_hat_1,shape = conv2d("conv2d_x_hat_1",x_hat,stride,32,shape2D=shape)
     x_hat_2,shape = conv2d("conv2d_x_hat_2",x_hat_1,stride,64,shape2D=shape)
-    x_hat_new = tf.concat(1,[x_hat,x_hat_1,x_hat_2])
+    # x_hat_new = tf.concat(1,[x_hat,x_hat_1,x_hat_2])
 
-    return tf.concat(1,[x_new,x_hat_new])
+    # return tf.concat(1,[x_new,x_hat_new])
+    return tf.concat(1,[x_2,x_hat_2])
 
 def read_attn(x,x_hat,h_dec_prev):
     Fx,Fy,gamma=attn_window("read",h_dec_prev,read_n)
