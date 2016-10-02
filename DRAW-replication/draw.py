@@ -36,6 +36,7 @@ batch_size=100 # training minibatch size
 train_iters=10000
 learning_rate=1e-3 # learning rate for optimizer
 eps=1e-8 # epsilon for numerical stability
+display_step=100
 
 ## BUILD MODEL ## 
 
@@ -194,9 +195,9 @@ Lz=tf.reduce_mean(KL) # average over minibatches
 
 cost=Lx+Lz
 
-for v in tf.all_variables():
-    print("%s : %s" % (v.name,v.get_shape()))
-assert False
+# for v in tf.all_variables():
+#     print("%s : %s" % (v.name,v.get_shape()))
+# assert False
 
 ## OPTIMIZER ## 
 
@@ -213,7 +214,7 @@ data_directory = os.path.join(FLAGS.data_dir, "mnist")
 if not os.path.exists(data_directory):
 	os.makedirs(data_directory)
 train_data = mnist.input_data.read_data_sets(data_directory, one_hot=True).train # binarized (0-1) mnist data
-ckpt_file=os.path.join(FLAGS.data_dir,"draw"+str(read_attn)+str(write_attn)+".ckpt")
+ckpt_file=os.path.join(FLAGS.data_dir,"draw"+str(FLAGS.read_attn)+str(FLAGS.write_attn)+".ckpt")
 print "Using ckpt file:",ckpt_file
 
 fetches=[]
@@ -236,7 +237,7 @@ else:
     	feed_dict={x:xtrain}
     	results=sess.run(fetches,feed_dict)
     	Lxs[i],Lzs[i],_=results
-    	if i%100==0:
+    	if i%display_step==0:
     		print("iter=%d : Lx: %f Lz: %f" % (i,Lxs[i],Lzs[i]))
 
 ## TRAINING FINISHED ## 

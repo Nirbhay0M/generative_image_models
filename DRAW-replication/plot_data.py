@@ -36,32 +36,77 @@ def xrecons_grid(X,B,A):
 			img[startr:endr,startc:endc]=X[i,j,:,:]
 	return img
 
+def plotFilter(X):
+	"""
+	X is assumed to be of shape:
+		(height,width,num_filters)
+	"""
+	B,A,batch_size = X.shape
+	padsize=1
+	padval=.5
+	ph=B+2*padsize
+	pw=A+2*padsize
+	N=int(np.sqrt(batch_size))
+	if N*N != batch_size:
+		while batch_size%N != 0:
+			N = N-1
+	X = X.reshape((B,A,N,-1))
+	M = X.shape[3]
+	img = np.ones((N*ph,M*pw))*padval
+	# print "X shape:",X.shape
+	# print "N:",N
+	for i in range(N):
+		for j in range(M):
+			startr=i*ph+padsize
+			endr=startr+B
+			startc=j*pw+padsize
+			endc=startc+A
+			img[startr:endr,startc:endc]=X[:,:,i,j]
+	return img
+
 if __name__ == '__main__':
 	prefix=sys.argv[1]
 	out_file=sys.argv[2]
-	[C,Lxs,Lzs]=np.load(out_file)
-	T,batch_size,img_size=C.shape
-	X=1.0/(1.0+np.exp(-C)) # x_recons=sigmoid(canvas)
-	B=A=int(np.sqrt(img_size))
-	if interactive:
-		f,arr=plt.subplots(1,T)
-	for t in range(T):
-		img=xrecons_grid(X[t,:,:],B,A)
-		if interactive:
-			arr[t].matshow(img,cmap=plt.cm.gray)
-			arr[t].set_xticks([])
-			arr[t].set_yticks([])
-		else:
+	plot_filters = None
+	if len(sys.argv)>3:
+		plot_filters=bool(int(sys.argv[3]))
+
+	if plot_filters:
+		Kernels=np.load(out_file)
+		for t,filt in enumerate(Kernels):
+			if len(filt.shape) < 3:
+				continue
+			h,w = filt.shape[0],filt.shape[1]
+			img = plotFilter(filt.reshape((h,w,-1)))
 			plt.matshow(img,cmap=plt.cm.gray)
 			imgname='%s_%d.png' % (prefix,t) # you can merge using imagemagick, i.e. convert -delay 10 -loop 0 *.png mnist.gif
 			plt.savefig(imgname)
 			print(imgname)
-	f=plt.figure()
-	plt.plot(Lxs,label='Reconstruction Loss Lx')
-	plt.plot(Lzs,label='Latent Loss Lz')
-	plt.xlabel('iterations')
-	plt.legend()
-	if interactive:
-		plt.show()
+		print "End!"
 	else:
-		plt.savefig('%s_loss.png' % (prefix))
+		[C,Lxs,Lzs]=np.load(out_file)
+		T,batch_size,img_size=C.shape
+		X=1.0/(1.0+np.exp(-C)) # x_recons=sigmoid(canvas)
+		B=A=int(np.sqrt(img_size))
+		if interactive:
+			f,arr=plt.subplots(1,T)
+		for t in range(T):
+			img=xrecons_grid(X[t,:,:],B,A)
+			if interactive:
+				arr[t].matshow(img,cmap=plt.cm.gray)
+				arr[t].set_xticks([])
+				arr[t].set_yticks([])
+			else:
+				plt.matshow(img,cmap=plt.cm.gray)
+				imgname='%s_%d.png' % (prefix,t) # you can merge using imagemagick, i.e. convert -delay 10 -loop 0 *.png mnist.gif
+				plt.savefig(imgname)
+				print(imgname)
+		f=plt.figure()
+		plt.plot(Lxs,label='Reconstruction Loss Lx')
+		plt.plot(Lzs,label='Latent Loss Lz')
+		plt.xlabel('iterations')
+		plt.legend()
+		if interactive:
+			plt.show()
+		else:
+			plt.savefig('%s_loss.png' % (prefix))

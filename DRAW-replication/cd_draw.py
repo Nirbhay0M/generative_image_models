@@ -274,6 +274,9 @@ cost=Lx+Lz
 #     print("%s : %s" % (v.name,v.get_shape()))
 # assert False
 
+## Filter Variable Fetcher ##
+filter_kernels = tf.get_collection(tf.GraphKeys.VARIABLES, "conv2d")
+
 ## OPTIMIZER ## 
 
 optimizer=tf.train.AdamOptimizer(learning_rate, beta1=0.5)
@@ -298,6 +301,7 @@ fetches.extend([Lx,Lz,train_op])
 fetches.extend([mean_grads])
 Lxs=[0]*train_iters
 Lzs=[0]*train_iters
+m_gradients=[0]*train_iters
 
 sess=tf.InteractiveSession()
 
@@ -309,16 +313,25 @@ if FLAGS.restore:
 else:
     print "Beginning training!"
     grad_log = open("./tmp/GradLog.txt","w")
+    filter_save_file = "conv_filters_"+str(FLAGS.save_suffix)+".npy"
+    filter_save_path = os.path.join(FLAGS.data_dir,filter_save_file)
 
     for i in range(train_iters):
     	xtrain,_=train_data.next_batch(batch_size) # xtrain is (batch_size x img_size)
     	feed_dict={x:xtrain}
     	results=sess.run(fetches,feed_dict)
-    	Lxs[i],Lzs[i],_,m_gradients=results
+    	Lxs[i],Lzs[i],_,m_gradients[i]=results
+
     	if i%display_step==0:
             print("iter=%d : Lx: %f Lz: %f" % (i,Lxs[i],Lzs[i]))
-            grad_log.write(str(m_gradients)+"\n")
-    grad_log.close()
+            
+            # for v in tf.all_variables():
+            #     if "W_kernel" in v.name:
+            #         print("%s : %s" % (v.name,v.get_shape()))
+            all_filters = sess.run(filter_kernels,feed_dict)
+            # print "Number of filter variables:",len(all_filters)
+            np.save(filter_save_path,all_filters)
+            assert False
 ## TRAINING FINISHED ## 
 
 canvases=sess.run(cs,feed_dict) # generate some examples
