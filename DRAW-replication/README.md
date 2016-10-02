@@ -1,5 +1,5 @@
 This code is taken from https://github.com/ericjang/draw for experiment purposes.
-# draw
+# DRAW
 
 TensorFlow implementation of [DRAW: A Recurrent Neural Network For Image Generation](http://arxiv.org/pdf/1502.04623.pdf) on the MNIST generation task.
 

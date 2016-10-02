@@ -28,44 +28,77 @@ restore_vars = False
 # Network Parameters
 n_hidden_1 = 256 # 1st layer num features
 n_hidden_2 = 128 # 2nd layer num features
-n_input = 784 # MNIST data input (img shape: 28*28)
+n_height = 28
+n_width = 28
+n_input = n_height*n_width # MNIST data input (img shape: 28*28)
+n_conv_filters = 32
 
 # tf Graph input (only pictures)
 X = tf.placeholder("float", [None, n_input])
 
 weights = {
+    'encoder_kernel' : tf.Variable(tf.random_normal([ 5,5,1,n_conv_filters ])),
+    'decoder_kernel' : tf.Variable(tf.random_normal([ 5,5,1,n_conv_filters ])),
+
     'encoder_h1': tf.Variable(tf.random_normal([n_input, n_hidden_1])),
-    'encoder_h2': tf.Variable(tf.random_normal([n_hidden_1, n_hidden_2])),
-    'decoder_h1': tf.Variable(tf.random_normal([n_hidden_2, n_hidden_1])),
-    'decoder_h2': tf.Variable(tf.random_normal([n_hidden_1, n_input])),
+    # 'encoder_h2': tf.Variable(tf.random_normal([n_hidden_1, n_hidden_2])),
+    # 'decoder_h1': tf.Variable(tf.random_normal([n_hidden_2, n_hidden_1])),
+    'decoder_h1': tf.Variable(tf.random_normal([n_hidden_1, n_input])),
 }
 biases = {
+    'encoder_kernel_b' : tf.Variable(tf.random_normal([n_conv_filters])),
+    'decoder_kernel_b' : tf.Variable(tf.random_normal([n_conv_filters])),
+
     'encoder_b1': tf.Variable(tf.random_normal([n_hidden_1])),
-    'encoder_b2': tf.Variable(tf.random_normal([n_hidden_2])),
-    'decoder_b1': tf.Variable(tf.random_normal([n_hidden_1])),
-    'decoder_b2': tf.Variable(tf.random_normal([n_input])),
+    # 'encoder_b2': tf.Variable(tf.random_normal([n_hidden_2])),
+    'decoder_b1': tf.Variable(tf.random_normal([n_input])),
+    # 'decoder_b2': tf.Variable(tf.random_normal([n_input])),
 }
+
+def conv2d(x, W, b, strides):
+    # Conv2D wrapper, with bias and relu activation
+    x = tf.nn.conv2d(x, W, strides=[1, strides, strides, 1], padding='SAME')
+    x = tf.nn.bias_add(x, b)
+    return tf.nn.relu(x)
+
+def conv2d_transpose(x, W, b, strides):
+    x = tf.nn.bias_add(x, b)
+    x_deconv = tf.nn.conv2d_transpose(x, W, strides=[1, strides, strides, 1],
+                            output_shape=[batch_size,n_height,n_width,1], padding='SAME')
+    return tf.nn.sigmoid(x_deconv)
 
 # Building the encoder
 def encoder(x):
-    # Encoder Hidden layer with sigmoid activation #1
-    layer_1 = tf.nn.sigmoid(tf.add(tf.matmul(x, weights['encoder_h1']),
-                                   biases['encoder_b1']))
-    # Decoder Hidden layer with sigmoid activation #2
-    layer_2 = tf.nn.sigmoid(tf.add(tf.matmul(layer_1, weights['encoder_h2']),
-                                   biases['encoder_b2']))
-    return layer_2
+    x = tf.reshape(x,[-1,n_height,n_width,1])
 
+    x_conv = conv2d(x,weights['encoder_kernel'],biases['encoder_kernel_b'],2)
+
+    x_flat = tf.reshape(x_conv,[-1,n_input])
+
+    layer_1 = tf.nn.sigmoid(tf.add(tf.matmul(x_flat, weights['encoder_h1']),
+                                   biases['encoder_b1']))
+
+    # Decoder Hidden layer with sigmoid activation #2
+    # layer_2 = tf.nn.sigmoid(tf.add(tf.matmul(layer_1, weights['encoder_h2']),
+    #                                biases['encoder_b2']))
+    # print("Encoder output_shape:",layer_1)
+    return layer_1
 
 # Building the decoder
-def decoder(x):
+def decoder(x_flat):
     # Encoder Hidden layer with sigmoid activation #1
-    layer_1 = tf.nn.sigmoid(tf.add(tf.matmul(x, weights['decoder_h1']),
+    layer_1 = tf.nn.sigmoid(tf.add(tf.matmul(x_flat, weights['decoder_h1']),
                                    biases['decoder_b1']))
+
+    x = tf.reshape(layer_1,[-1,n_height//2,n_width//2,n_conv_filters])
+
+    x_deconv = conv2d_transpose(x,weights['decoder_kernel'],biases['decoder_kernel_b'],2)
+    # print("x_deconv:",x_deconv)
+
     # Decoder Hidden layer with sigmoid activation #2
-    layer_2 = tf.nn.sigmoid(tf.add(tf.matmul(layer_1, weights['decoder_h2']),
-                                   biases['decoder_b2']))
-    return layer_2
+    # layer_2 = tf.nn.sigmoid(tf.add(tf.matmul(layer_1, weights['decoder_h2']),
+    #                                biases['decoder_b2']))
+    return tf.reshape(x_deconv,[batch_size,n_input])
 
 # Construct model
 encoder_op = encoder(X)
@@ -86,22 +119,6 @@ init = tf.initialize_all_variables()
 # Op to save and restore variables
 saver = tf.train.Saver()
 
-def assignArgs(args):
-    global learning_rate
-    global training_iters
-    global batch_size
-    global display_step
-    global restore_vars
-
-    # learning_rate   = args.learning_rate 
-    # training_iters  = args.training_iters
-    # batch_size      = args.batch_size
-    # display_step    = args.display_step
-
-    restore_vars    = bool(args.restore_vars)
-
-    return
-
 def parseArgs():
     parser = argparse.ArgumentParser(description="Architecture Parameters")
 
@@ -109,17 +126,14 @@ def parseArgs():
     parser.add_argument('-res','--restore-vars',default=0,type=int)
     
     argcomplete.autocomplete(parser)
-    logging.info("Parsing arguments.")
+    # logging.info("Parsing arguments.")
     args = parser.parse_args()
-
-    logging.debug("Args:"+str(args))
-    assignArgs(args)
 
     return args
 
 if __name__=='__main__':
     logging.info("Main Begins!")
-    parseArgs()
+    args = parseArgs()
 
     save_model_name = "model_autoenc.ckpt"
     
@@ -131,6 +145,7 @@ if __name__=='__main__':
 
         else:
             sess.run(init)
+            print("Beginning Training")
             total_batch = int(mnist.train.num_examples/batch_size)
             # Training cycle
             for epoch in range(training_epochs):
