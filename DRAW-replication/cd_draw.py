@@ -15,6 +15,7 @@ import numpy as np
 import os
 
 tf.flags.DEFINE_string("data_dir","./data/", "")
+tf.flags.DEFINE_string("save_suffix","cd_double_conv", "")
 tf.flags.DEFINE_boolean("read_attn", False, "enable attention for reader")
 tf.flags.DEFINE_boolean("write_attn",False, "enable attention for writer")
 tf.flags.DEFINE_boolean("restore",False, "restore model")
@@ -29,7 +30,7 @@ enc_size = 256 # number of hidden units / output size in LSTM
 dec_size = 256
 kernel_height = 5
 kernel_width = 5
-n_filters = 32
+# n_filters = 32
 read_n = 5 # read glimpse grid width/height
 write_n = 5 # write glimpse grid width/height
 read_size = 2*read_n*read_n if FLAGS.read_attn else 2*img_size
@@ -40,6 +41,7 @@ batch_size=100 # training minibatch size
 train_iters=10000
 learning_rate=1e-3 # learning rate for optimizer
 eps=1e-8 # epsilon for numerical stability
+display_step = 1
 
 ## BUILD MODEL ## 
 
@@ -88,9 +90,21 @@ def attn_window(scope,h_dec,N):
 ## READ ## 
 def read_no_attn(x,x_hat,h_dec_prev=None):
     stride = 2
-    x_conv,shape = conv2d("conv2d_x",x,stride)
-    x_hat_conv,_ = conv2d("conv2d_x_hat",x_hat,stride)
-    return tf.concat(1,[x_conv,x_hat_conv]),shape
+    shape = (batch_size,B,A,1)
+    # print "Shape:",shape
+    x_1,shape = conv2d("conv2d_x_1",x,stride,32,shape2D=shape)
+    # print "Shape:",shape
+    x_2,shape = conv2d("conv2d_x_2",x_1,stride,32,shape2D=shape)
+    # print "Shape:",shape
+    x_new = tf.concat(1,[x,x_1,x_2])
+
+    # assert False
+    shape = (batch_size,B,A,1)
+    x_hat_1,shape = conv2d("conv2d_x_hat_1",x_hat,stride,64,shape2D=shape)
+    x_hat_2,shape = conv2d("conv2d_x_hat_2",x_hat_1,stride,64,shape2D=shape)
+    x_hat_new = tf.concat(1,[x_hat,x_hat_1,x_hat_2])
+
+    return tf.concat(1,[x_new,x_hat_new])
 
 def read_attn(x,x_hat,h_dec_prev):
     Fx,Fy,gamma=attn_window("read",h_dec_prev,read_n)
@@ -137,16 +151,19 @@ def decode(state,input):
         return lstm_dec(input, state)
 
 ## WRITER ## 
-def write_no_attn(h_dec,conv_shape):
-    # print "write got conv_shape:",conv_shape
-    # conv_shape is (batch_size, B', A', n_filters)
+def write_no_attn(h_dec,conv_shape=None):
     with tf.variable_scope("write",reuse=DO_SHARE):
-        decoded_img_size = conv_shape[1]*conv_shape[2]*conv_shape[3]
-        # return linear(h_dec_deconv,img_size)
-        img_decoded = linear(h_dec,decoded_img_size)
-        img_deconv = conv2d_transpose(img_decoded,2,conv_shape,
-                            output_shape=[batch_size,B,A,1])
-        return tf.reshape(img_deconv,[batch_size,-1])
+        return linear(h_dec,img_size)
+
+    # # print "write got conv_shape:",conv_shape
+    # # conv_shape is (batch_size, B', A', n_filters)
+    # with tf.variable_scope("write",reuse=DO_SHARE):
+    #     decoded_img_size = conv_shape[1]*conv_shape[2]*conv_shape[3]
+    #     # return linear(h_dec_deconv,img_size)
+    #     img_decoded = linear(h_dec,decoded_img_size)
+    #     img_deconv = conv2d_transpose(img_decoded,2,conv_shape,
+    #                         output_shape=[batch_size,B,A,1])
+    #     return tf.reshape(img_deconv,[batch_size,-1])
 
 def write_attn(h_dec):
     with tf.variable_scope("writeW",reuse=DO_SHARE):
@@ -162,13 +179,14 @@ def write_attn(h_dec):
 
 write=write_attn if FLAGS.write_attn else write_no_attn
 
-def conv2d(scope,x_input, strides):
-    original_shape = tf.shape(x_input)
+def conv2d(scope,x_input, strides, n_filters,shape2D):
+    _,_height,_width,_channels = shape2D
+    # original_shape = tf.shape(x_input)
     # print "conv2d got input: ",x_input
-    x = tf.reshape(x_input,[batch_size,B,A,1])
+    x = tf.reshape(x_input,[batch_size,_height,_width,_channels])
 
     with tf.variable_scope(scope,reuse=DO_SHARE):
-        W = tf.get_variable("W_kernel",[kernel_height,kernel_width,1,n_filters],
+        W = tf.get_variable("W_kernel",[kernel_height,kernel_width,_channels,n_filters],
                                 initializer=tf.random_normal_initializer())
         b = tf.get_variable("b_kernel",[n_filters],
                                 initializer=tf.random_normal_initializer())
@@ -177,9 +195,12 @@ def conv2d(scope,x_input, strides):
         x = tf.nn.conv2d(x, W, strides=[1, strides, strides, 1], padding='SAME')
         x = tf.nn.bias_add(x, b)
         # x has shape: (batch_size, B', A', n_filters)
+        output_shape = [ int(s) for s in x.get_shape() ]
+        # print "output_shape:",output_shape
 
         x_out = tf.reshape(x,[batch_size,-1])
-        return tf.nn.relu(x_out),x.get_shape()
+
+        return tf.nn.relu(x_out),output_shape
 
 def conv2d_transpose(x_input, strides, conv_shape, output_shape):
     x = tf.reshape(x_input,conv_shape)
@@ -187,14 +208,15 @@ def conv2d_transpose(x_input, strides, conv_shape, output_shape):
     # with tf.variable_scope(scope,reuse=DO_SHARE):
     W = tf.get_variable("W_kernel_deconv",[kernel_height,kernel_width,1,n_filters],
                         initializer=tf.random_normal_initializer())
-    b = tf.get_variable("b_kernel_deconv",[n_filters],
-                        initializer=tf.random_normal_initializer())
-
-    x = tf.nn.bias_add(x, b)
+    
     x_deconv = tf.nn.conv2d_transpose(x, W, strides=[1, strides, strides, 1],
                             output_shape=output_shape, padding='SAME')
-
     x_output = tf.reshape(x_deconv,[batch_size,-1])
+
+    b = tf.get_variable("b_kernel_deconv",[B*A],
+                        initializer=tf.random_normal_initializer())
+
+    x_output = tf.nn.bias_add(x_output, b)
 
     # return tf.nn.sigmoid(x_output)
     return tf.nn.relu(x_output)
@@ -216,11 +238,11 @@ for t in range(T):
     c_prev = tf.zeros((batch_size,img_size)) if t==0 else cs[t-1]
     x_hat=x-tf.sigmoid(c_prev) # error image
     # r=read(x,x_hat,h_dec_prev)
-    r,conv_shape =read_no_attn(x,x_hat)
+    r =read_no_attn(x,x_hat)
     h_enc,enc_state=encode(enc_state,tf.concat(1,[r,h_dec_prev]))
     z,mus[t],logsigmas[t],sigmas[t]=sampleQ(h_enc)
     h_dec,dec_state=decode(dec_state,z)
-    cs[t]=c_prev+write(h_dec,conv_shape) # store results
+    cs[t]=c_prev+write(h_dec) # store results
     h_dec_prev=h_dec
     DO_SHARE=True # from now on, share variables
 
@@ -247,13 +269,19 @@ Lz=tf.reduce_mean(KL) # average over minibatches
 
 cost=Lx+Lz
 
+# for v in tf.all_variables():
+#     print("%s : %s" % (v.name,v.get_shape()))
+# assert False
+
 ## OPTIMIZER ## 
 
 optimizer=tf.train.AdamOptimizer(learning_rate, beta1=0.5)
 grads=optimizer.compute_gradients(cost)
+mean_grads = []
 for i,(g,v) in enumerate(grads):
     if g is not None:
         grads[i]=(tf.clip_by_norm(g,5),v) # clip gradients
+        mean_grads.append(tf.reduce_mean(grads[i]))
 train_op=optimizer.apply_gradients(grads)
 
 ## RUN TRAINING ## 
@@ -262,10 +290,11 @@ data_directory = os.path.join(FLAGS.data_dir, "mnist")
 if not os.path.exists(data_directory):
 	os.makedirs(data_directory)
 train_data = mnist.input_data.read_data_sets(data_directory, one_hot=True).train # binarized (0-1) mnist data
-ckpt_file=os.path.join(FLAGS.data_dir,"cd_draw_save.ckpt")
+ckpt_file=os.path.join(FLAGS.data_dir,"save_"+str(FLAGS.save_suffix)+".ckpt")
 
 fetches=[]
 fetches.extend([Lx,Lz,train_op])
+fetches.extend([mean_grads])
 Lxs=[0]*train_iters
 Lzs=[0]*train_iters
 
@@ -278,20 +307,23 @@ if FLAGS.restore:
     saver.restore(sess, ckpt_file) # to restore from model, uncomment this line
 else:
     print "Beginning training!"
+    grad_log = open("./tmp/GradLog.txt","w")
+
     for i in range(train_iters):
     	xtrain,_=train_data.next_batch(batch_size) # xtrain is (batch_size x img_size)
     	feed_dict={x:xtrain}
     	results=sess.run(fetches,feed_dict)
-    	Lxs[i],Lzs[i],_=results
-    	if i%100==0:
-    		print("iter=%d : Lx: %f Lz: %f" % (i,Lxs[i],Lzs[i]))
-
+    	Lxs[i],Lzs[i],_,m_gradients=results
+    	if i%display_step==0:
+            print("iter=%d : Lx: %f Lz: %f" % (i,Lxs[i],Lzs[i]))
+            grad_log.write(str(m_gradients)+"\n")
+    grad_log.close()
 ## TRAINING FINISHED ## 
 
 canvases=sess.run(cs,feed_dict) # generate some examples
 canvases=np.array(canvases) # T x batch x img_size
 
-out_file=os.path.join(FLAGS.data_dir,"draw_data.npy")
+out_file=os.path.join(FLAGS.data_dir,"cd_draw_data"+str(FLAGS.save_suffix)+".npy")
 np.save(out_file,[canvases,Lxs,Lzs])
 print("Outputs saved in file: %s" % out_file)
 

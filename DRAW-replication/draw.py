@@ -14,9 +14,10 @@ from tensorflow.examples.tutorials import mnist
 import numpy as np
 import os
 
-tf.flags.DEFINE_string("data_dir", "", "")
-tf.flags.DEFINE_boolean("read_attn", True, "enable attention for reader")
-tf.flags.DEFINE_boolean("write_attn",True, "enable attention for writer")
+tf.flags.DEFINE_string("data_dir", "./tmp/original_draw", "")
+tf.flags.DEFINE_boolean("read_attn", False, "enable attention for reader")
+tf.flags.DEFINE_boolean("write_attn",False, "enable attention for writer")
+tf.flags.DEFINE_boolean("restore",False, "restore model")
 FLAGS = tf.flags.FLAGS
 
 ## MODEL PARAMETERS ## 
@@ -193,6 +194,10 @@ Lz=tf.reduce_mean(KL) # average over minibatches
 
 cost=Lx+Lz
 
+for v in tf.all_variables():
+    print("%s : %s" % (v.name,v.get_shape()))
+assert False
+
 ## OPTIMIZER ## 
 
 optimizer=tf.train.AdamOptimizer(learning_rate, beta1=0.5)
@@ -208,6 +213,8 @@ data_directory = os.path.join(FLAGS.data_dir, "mnist")
 if not os.path.exists(data_directory):
 	os.makedirs(data_directory)
 train_data = mnist.input_data.read_data_sets(data_directory, one_hot=True).train # binarized (0-1) mnist data
+ckpt_file=os.path.join(FLAGS.data_dir,"draw"+str(read_attn)+str(write_attn)+".ckpt")
+print "Using ckpt file:",ckpt_file
 
 fetches=[]
 fetches.extend([Lx,Lz,train_op])
@@ -220,13 +227,17 @@ saver = tf.train.Saver() # saves variables learned during training
 tf.initialize_all_variables().run()
 #saver.restore(sess, "/tmp/draw/drawmodel.ckpt") # to restore from model, uncomment this line
 
-for i in range(train_iters):
-	xtrain,_=train_data.next_batch(batch_size) # xtrain is (batch_size x img_size)
-	feed_dict={x:xtrain}
-	results=sess.run(fetches,feed_dict)
-	Lxs[i],Lzs[i],_=results
-	if i%100==0:
-		print("iter=%d : Lx: %f Lz: %f" % (i,Lxs[i],Lzs[i]))
+if FLAGS.restore:
+    saver.restore(sess, ckpt_file)
+else:
+    print "Beginning training!"
+    for i in range(train_iters):
+    	xtrain,_=train_data.next_batch(batch_size) # xtrain is (batch_size x img_size)
+    	feed_dict={x:xtrain}
+    	results=sess.run(fetches,feed_dict)
+    	Lxs[i],Lzs[i],_=results
+    	if i%100==0:
+    		print("iter=%d : Lx: %f Lz: %f" % (i,Lxs[i],Lzs[i]))
 
 ## TRAINING FINISHED ## 
 
@@ -237,7 +248,7 @@ out_file=os.path.join(FLAGS.data_dir,"draw_data.npy")
 np.save(out_file,[canvases,Lxs,Lzs])
 print("Outputs saved in file: %s" % out_file)
 
-ckpt_file=os.path.join(FLAGS.data_dir,"drawmodel.ckpt")
+save_path = saver.save(sess,ckpt_file)
 print("Model saved in file: %s" % saver.save(sess,ckpt_file))
 
 sess.close()
