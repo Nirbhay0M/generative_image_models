@@ -15,7 +15,7 @@ import numpy as np
 import os
 
 tf.flags.DEFINE_string("data_dir","./data/", "")
-tf.flags.DEFINE_string("save_suffix","cd_only_2conv_output", "")
+tf.flags.DEFINE_string("save_suffix","pure_conv_big", "")
 tf.flags.DEFINE_boolean("read_attn", False, "enable attention for reader")
 tf.flags.DEFINE_boolean("write_attn",False, "enable attention for writer")
 tf.flags.DEFINE_boolean("restore",False, "restore model")
@@ -38,7 +38,7 @@ write_size = write_n*write_n if FLAGS.write_attn else img_size
 z_size=10 # QSampler output size
 T=10 # MNIST generation sequence length
 batch_size=100 # training minibatch size
-train_iters=10000
+train_iters=200000
 learning_rate=1e-3 # learning rate for optimizer
 eps=1e-8 # epsilon for numerical stability
 display_step = 100
@@ -295,6 +295,8 @@ if not os.path.exists(data_directory):
 	os.makedirs(data_directory)
 train_data = mnist.input_data.read_data_sets(data_directory, one_hot=True).train # binarized (0-1) mnist data
 ckpt_file=os.path.join(FLAGS.data_dir,"save_"+str(FLAGS.save_suffix)+".ckpt")
+filter_save_file = "conv_filters_"+str(FLAGS.save_suffix)+".npy"
+filter_save_path = os.path.join(FLAGS.data_dir,filter_save_file)
 
 fetches=[]
 fetches.extend([Lx,Lz,train_op])
@@ -306,16 +308,21 @@ m_gradients=[0]*train_iters
 sess=tf.InteractiveSession()
 
 saver = tf.train.Saver() # saves variables learned during training
+
 tf.initialize_all_variables().run()
 
 if FLAGS.restore:
     saver.restore(sess, ckpt_file) # to restore from model, uncomment this line
+    print "Model restored! Save file:",ckpt_file
+
+    all_filters = sess.run(filter_kernels)
+    # print "Number of filter variables:",len(all_filters)
+    print "Saving filter kernels..."
+    np.save(filter_save_path,all_filters)
+    print "Filter kernels saved in path:",filter_save_path
+
 else:
     print "Beginning training!"
-    grad_log = open("./tmp/GradLog.txt","w")
-    filter_save_file = "conv_filters_"+str(FLAGS.save_suffix)+".npy"
-    filter_save_path = os.path.join(FLAGS.data_dir,filter_save_file)
-
     for i in range(train_iters):
     	xtrain,_=train_data.next_batch(batch_size) # xtrain is (batch_size x img_size)
     	feed_dict={x:xtrain}
@@ -324,25 +331,18 @@ else:
 
     	if i%display_step==0:
             print("iter=%d : Lx: %f Lz: %f" % (i,Lxs[i],Lzs[i]))
-            
-            # for v in tf.all_variables():
-            #     if "W_kernel" in v.name:
-            #         print("%s : %s" % (v.name,v.get_shape()))
-            all_filters = sess.run(filter_kernels,feed_dict)
-            # print "Number of filter variables:",len(all_filters)
-            np.save(filter_save_path,all_filters)
-            assert False
-## TRAINING FINISHED ## 
+            # all_filters = sess.run(filter_kernels,feed_dict)
+            # np.save(filter_save_path,all_filters)
+    ## TRAINING FINISHED ## 
+    save_path = saver.save(sess,ckpt_file)
+    print("Model saved in file: %s" % save_path)
 
-canvases=sess.run(cs,feed_dict) # generate some examples
-canvases=np.array(canvases) # T x batch x img_size
+    canvases=sess.run(cs,feed_dict) # generate some examples
+    canvases=np.array(canvases) # T x batch x img_size
 
-out_file=os.path.join(FLAGS.data_dir,"cd_draw_data"+str(FLAGS.save_suffix)+".npy")
-np.save(out_file,[canvases,Lxs,Lzs])
-print("Outputs saved in file: %s" % out_file)
-
-save_path = saver.save(sess,ckpt_file)
-print("Model saved in file: %s" % save_path)
+    out_file=os.path.join(FLAGS.data_dir,"cd_draw_data"+str(FLAGS.save_suffix)+".npy")
+    np.save(out_file,[canvases,Lxs,Lzs])
+    print("Outputs saved in file: %s" % out_file)
 
 sess.close()
 

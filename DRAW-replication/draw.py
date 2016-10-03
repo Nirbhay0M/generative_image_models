@@ -14,9 +14,9 @@ from tensorflow.examples.tutorials import mnist
 import numpy as np
 import os
 
-tf.flags.DEFINE_string("data_dir", "./tmp/original_draw", "")
-tf.flags.DEFINE_boolean("read_attn", False, "enable attention for reader")
-tf.flags.DEFINE_boolean("write_attn",False, "enable attention for writer")
+tf.flags.DEFINE_string("data_dir", "./tmp/original_draw_no_privy", "")
+tf.flags.DEFINE_boolean("read_attn", True, "enable attention for reader")
+tf.flags.DEFINE_boolean("write_attn",True, "enable attention for writer")
 tf.flags.DEFINE_boolean("restore",False, "restore model")
 FLAGS = tf.flags.FLAGS
 
@@ -165,11 +165,12 @@ for t in range(T):
     c_prev = tf.zeros((batch_size,img_size)) if t==0 else cs[t-1]
     x_hat=x-tf.sigmoid(c_prev) # error image
     r=read(x,x_hat,h_dec_prev)
-    h_enc,enc_state=encode(enc_state,tf.concat(1,[r,h_dec_prev]))
+    # h_enc,enc_state=encode(enc_state,tf.concat(1,[r,h_dec_prev]))
+    h_enc,enc_state=encode(enc_state,r)
     z,mus[t],logsigmas[t],sigmas[t]=sampleQ(h_enc)
     h_dec,dec_state=decode(dec_state,z)
     cs[t]=c_prev+write(h_dec) # store results
-    h_dec_prev=h_dec
+    # h_dec_prev=h_dec
     DO_SHARE=True # from now on, share variables
 
 ## LOSS FUNCTION ## 
