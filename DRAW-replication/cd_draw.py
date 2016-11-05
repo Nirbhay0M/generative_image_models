@@ -19,6 +19,10 @@ tf.flags.DEFINE_string("save_suffix","pure_conv_big", "")
 tf.flags.DEFINE_boolean("read_attn", False, "enable attention for reader")
 tf.flags.DEFINE_boolean("write_attn",False, "enable attention for writer")
 tf.flags.DEFINE_boolean("restore",False, "restore model")
+
+tf.flags.DEFINE_boolean("force_restore",False, "force restore a model")
+tf.flags.DEFINE_string("restore_path","", "force resotre path")
+
 FLAGS = tf.flags.FLAGS
 
 ## MODEL PARAMETERS ## 
@@ -38,10 +42,14 @@ write_size = write_n*write_n if FLAGS.write_attn else img_size
 z_size=10 # QSampler output size
 T=10 # MNIST generation sequence length
 batch_size=100 # training minibatch size
-train_iters=200000
+train_iters=10000
 learning_rate=1e-3 # learning rate for optimizer
 eps=1e-8 # epsilon for numerical stability
 display_step = 100
+
+SAVE_CANVASSES = False
+
+n_gen_batches = 100
 
 ## BUILD MODEL ## 
 
@@ -96,14 +104,15 @@ def read_no_attn(x,x_hat,h_dec_prev=None):
     # print "Shape:",shape
     x_2,shape = conv2d("conv2d_x_2",x_1,stride,64,shape2D=shape)
     # print "Shape:",shape
-    # x_new = tf.concat(1,[x,x_1,x_2])
+    x_new = tf.concat(1,[x,x_1,x_2])
 
     # assert False
     shape = (batch_size,B,A,1)
     x_hat_1,shape = conv2d("conv2d_x_hat_1",x_hat,stride,32,shape2D=shape)
     x_hat_2,shape = conv2d("conv2d_x_hat_2",x_hat_1,stride,64,shape2D=shape)
-    # x_hat_new = tf.concat(1,[x_hat,x_hat_1,x_hat_2])
+    x_hat_new = tf.concat(1,[x_hat,x_hat_1,x_hat_2])
 
+    # return tf.concat(1,[x,x_hat])
     # return tf.concat(1,[x_new,x_hat_new])
     return tf.concat(1,[x_2,x_hat_2])
 
@@ -239,7 +248,7 @@ for t in range(T):
     c_prev = tf.zeros((batch_size,img_size)) if t==0 else cs[t-1]
     x_hat=x-tf.sigmoid(c_prev) # error image
     # r=read(x,x_hat,h_dec_prev)
-    r =read_no_attn(x,x_hat)
+    r=read_no_attn(x,x_hat)
     h_enc,enc_state=encode(enc_state,tf.concat(1,[r,h_dec_prev]))
     z,mus[t],logsigmas[t],sigmas[t]=sampleQ(h_enc)
     h_dec,dec_state=decode(dec_state,z)
@@ -290,13 +299,30 @@ train_op=optimizer.apply_gradients(grads)
 
 ## RUN TRAINING ## 
 
-data_directory = os.path.join(FLAGS.data_dir, "mnist")
-if not os.path.exists(data_directory):
-	os.makedirs(data_directory)
-train_data = mnist.input_data.read_data_sets(data_directory, one_hot=True).train # binarized (0-1) mnist data
-ckpt_file=os.path.join(FLAGS.data_dir,"save_"+str(FLAGS.save_suffix)+".ckpt")
+mnist_directory = os.path.join("./tmp", "mnist")
+param_string = str(FLAGS.read_attn)+str(FLAGS.write_attn)
+
+if FLAGS.force_restore:
+    # data_directory = FLAGS.restore_path
+    print "Force restoring..."
+    ckpt_file = FLAGS.restore_path
+    data_directory = os.path.dirname(ckpt_file)
+else:
+    assert False
+    data_directory = FLAGS.data_dir
+    ckpt_file=os.path.join(data_directory,"draw"+param_string+".ckpt")
+    # data_directory = os.path.join(FLAGS.data_dir, "mnist")
+    if not os.path.exists(data_directory):
+        os.makedirs(data_directory)
+
+print "Using ckpt file:",ckpt_file
+
+train_data = mnist.input_data.read_data_sets(mnist_directory, one_hot=True).train # binarized (0-1) mnist data
+test_data = mnist.input_data.read_data_sets(mnist_directory, one_hot=True).test # binarized (0-1) mnist test data
+
+# ckpt_file=os.path.join(FLAGS.data_dir,"save_"+str(FLAGS.save_suffix)+".ckpt")
 filter_save_file = "conv_filters_"+str(FLAGS.save_suffix)+".npy"
-filter_save_path = os.path.join(FLAGS.data_dir,filter_save_file)
+filter_save_path = os.path.join(data_directory,filter_save_file)
 
 fetches=[]
 fetches.extend([Lx,Lz,train_op])
@@ -311,7 +337,7 @@ saver = tf.train.Saver() # saves variables learned during training
 
 tf.initialize_all_variables().run()
 
-if FLAGS.restore:
+if FLAGS.restore or FLAGS.force_restore:
     saver.restore(sess, ckpt_file) # to restore from model, uncomment this line
     print "Model restored! Save file:",ckpt_file
 
@@ -323,6 +349,7 @@ if FLAGS.restore:
 
 else:
     print "Beginning training!"
+    assert False
     for i in range(train_iters):
     	xtrain,_=train_data.next_batch(batch_size) # xtrain is (batch_size x img_size)
     	feed_dict={x:xtrain}
@@ -334,15 +361,34 @@ else:
             # all_filters = sess.run(filter_kernels,feed_dict)
             # np.save(filter_save_path,all_filters)
     ## TRAINING FINISHED ## 
+
     save_path = saver.save(sess,ckpt_file)
     print("Model saved in file: %s" % save_path)
 
+if SAVE_CANVASSES:
     canvases=sess.run(cs,feed_dict) # generate some examples
     canvases=np.array(canvases) # T x batch x img_size
 
-    out_file=os.path.join(FLAGS.data_dir,"cd_draw_data"+str(FLAGS.save_suffix)+".npy")
+
+    out_file=os.path.join(data_directory,"cd_data"+str(FLAGS.save_suffix)+".npy")
     np.save(out_file,[canvases,Lxs,Lzs])
     print("Outputs saved in file: %s" % out_file)
+
+print "Generating %d image samples..." % (n_gen_batches*batch_size)
+final_imgs = []
+for i in range(n_gen_batches):
+    print "i:%d"%i
+    xtest,_ = test_data.next_batch(batch_size)
+    feed_dict = {x:xtest}
+    canvases = sess.run(cs,feed_dict)
+    last_canvas = canvases[-1]
+    final_imgs.append(last_canvas)
+    # print last_canvas.shape
+
+all_gen_imgs = np.concatenate(final_imgs,axis=0)
+gen_file = ckpt_file+".GEN.npy"
+np.save(gen_file,all_gen_imgs)
+print "Generated images saved in file:",gen_file
 
 sess.close()
 
