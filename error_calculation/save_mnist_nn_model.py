@@ -17,7 +17,7 @@ d_metric = 'l2'
 print ("Fitting")
 neigh = NearestNeighbors(n_neighbors = k, metric = d_metric)
 neigh.fit(tr_data)
-joblib.dump(neigh, 'data/mnist_nn_model.pkl') 
+joblib.dump(neigh, 'data/model/mnist_nn_model.pkl') 
 
 # for loading
-# neigh = joblib.load('data/mnist_nn_model.pkl') 
+# neigh = joblib.load('data/model/mnist_nn_model.pkl') 

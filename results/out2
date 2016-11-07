@@ -1,0 +1,12 @@
+file: data/save_cd_double_conv.ckpt.GEN.npy
+max error: 1289.447582
+min error: 32.236113
+average error: 632.393408
+std: 259.940351
+
+file: data/save_cd_only_2conv_output.ckpt.GEN.npy
+max error: 531.897081
+min error: 435.188507
+average error: 485.476966
+std: 14.376763
+
