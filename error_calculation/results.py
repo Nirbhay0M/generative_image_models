@@ -15,10 +15,12 @@ tr_data = np.asarray(tr_data[0])
 tr_data = np.where(tr_data > 0, 1, 0)
 img_size = len(tr_data[0])
 
-# gen_images = np.load(file_name)
-ts_data = mndata.load_testing()
-gen_images = ts_data[0]
-gen_images = np.asarray(gen_images)
+gen_images = np.load(file_name)
+gen_images = gen_images[0:1000]
+# ts_data = mndata.load_testing()
+# gen_images = ts_data[0][0:1000]
+# gen_images = np.asarray(gen_images)
+
 gen_images = np.where(gen_images > 0, 1, 0)
 
 n_images = len(gen_images)
@@ -31,7 +33,8 @@ d_metric = 'l2'
 # neigh.fit(tr_data)
 
 # Load pretrained model
-neigh = joblib.load('data/mnist_nn_model.pkl') 
+print("Loading saved model")
+neigh = joblib.load('data/model/mnist_nn_model.pkl') 
 
 print ("Predicting")
 results = neigh.kneighbors(gen_images, k, return_distance = False)

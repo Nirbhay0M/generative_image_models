@@ -1,0 +1,59 @@
+file: data/original-No-Attention.npy
+max error: 1337.801869
+min error: 16.118017
+average error: 644.610925
+std: 268.302613
+
+file: data/original-No-Privy.npy
+max error: 2546.659050
+min error: 80.590400
+average error: 809.611871
+std: 298.315038
+
+file: data/original-RW.npy
+max error: 1370.038060
+min error: 16.118017
+average error: 643.095824
+std: 264.670126
+
+file: data/original-T1.npy
+max error: 1466.746635
+min error: 80.590400
+average error: 699.041734
+std: 279.226227
+
+file: data/original-T1-100k.npy
+max error: 1724.636167
+min error: 48.354209
+average error: 653.314697
+std: 290.033886
+
+file: data/original-T2.npy
+max error: 1402.274252
+min error: 48.354209
+average error: 698.171357
+std: 276.377239
+
+file: data/original-T5.npy
+max error: 1853.580933
+min error: 64.472305
+average error: 796.443387
+std: 302.796535
+
+file: data/RW-Attn-Error-Img-Only.npy
+max error: 1466.746635
+min error: 16.118017
+average error: 638.663348
+std: 267.377116
+
+file: data/save_cd_double_conv.ckpt.GEN.npy
+max error: 1289.447582
+min error: 32.236113
+average error: 632.393408
+std: 259.940351
+
+file: data/save_cd_only_2conv_output.ckpt.GEN.npy
+max error: 531.897081
+min error: 435.188507
+average error: 485.476966
+std: 14.376763
