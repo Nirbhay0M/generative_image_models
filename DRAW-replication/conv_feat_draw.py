@@ -21,14 +21,25 @@ FLAGS = tf.flags.FLAGS
 
 ## MODEL PARAMETERS ## 
 
+# CNN Network Parameters
+n_input = 784 # MNIST data input (img shape: 28*28)
+n_classes = 10 # MNIST total classes (0-9 digits)
+dropout = 0.75 # Dropout, probability to keep units
+
 A,B = 28,28 # image width,height
 img_size = B*A # the canvas size
+
+
+## RNN parameters
+
+conv_img_size = 1024 # size of last fc layer from conv net
+
 enc_size = 256 # number of hidden units / output size in LSTM
 dec_size = 256
 read_n = 5 # read glimpse grid width/height
 write_n = 5 # write glimpse grid width/height
-read_size = 2*read_n*read_n if FLAGS.read_attn else 2*img_size
-write_size = write_n*write_n if FLAGS.write_attn else img_size
+read_size = 2*read_n*read_n if FLAGS.read_attn else 2*conv_img_size
+write_size = write_n*write_n if FLAGS.write_attn else conv_img_size
 z_size=10 # QSampler output size
 T=10 # MNIST generation sequence length
 batch_size=100 # training minibatch size
@@ -40,6 +51,7 @@ eps=1e-8 # epsilon for numerical stability
 
 DO_SHARE=None # workaround for variable_scope(reuse=True)
 
+keep_prob = tf.placeholder(tf.float32) #dropout (keep probability)
 x = tf.placeholder(tf.float32,shape=(batch_size,img_size)) # input (batch_size * img_size)
 e=tf.random_normal((batch_size,z_size), mean=0, stddev=1) # Qsampler noise
 lstm_enc = tf.nn.rnn_cell.LSTMCell(enc_size, state_is_tuple=True) # encoder Op
@@ -131,7 +143,7 @@ def decode(state,input):
 ## WRITER ## 
 def write_no_attn(h_dec):
     with tf.variable_scope("write",reuse=DO_SHARE):
-        return linear(h_dec,img_size)
+        return linear(h_dec,conv_img_size)
 
 def write_attn(h_dec):
     with tf.variable_scope("writeW",reuse=DO_SHARE):
@@ -145,7 +157,67 @@ def write_attn(h_dec):
     #gamma=tf.tile(gamma,[1,B*A])
     return wr*tf.reshape(1.0/gamma,[-1,1])
 
+# Create some wrappers for simplicity
+def conv2d(x, W, b, strides=1):
+    # Conv2D wrapper, with bias and relu activation
+    x = tf.nn.conv2d(x, W, strides=[1, strides, strides, 1], padding='SAME')
+    x = tf.nn.bias_add(x, b)
+    return tf.nn.relu(x)
+
+def maxpool2d(x, k=2):
+    # MaxPool2D wrapper
+    return tf.nn.max_pool(x, ksize=[1, k, k, 1], strides=[1, k, k, 1],
+                          padding='SAME')
+
+# Create model
+def conv_net(x, weights, biases, dropout):
+    # Reshape input picture
+    x = tf.reshape(x, shape=[-1, 28, 28, 1])
+
+    # Convolution Layer
+    conv1 = conv2d(x, weights['wc1'], biases['bc1'])
+    # Max Pooling (down-sampling)
+    conv1 = maxpool2d(conv1, k=2)
+
+    # Convolution Layer
+    conv2 = conv2d(conv1, weights['wc2'], biases['bc2'])
+    # Max Pooling (down-sampling)
+    conv2 = maxpool2d(conv2, k=2)
+
+    # Fully connected layer
+    # Reshape conv2 output to fit fully connected layer input
+    fc1 = tf.reshape(conv2, [-1, weights['wd1'].get_shape().as_list()[0]])
+    fc1 = tf.add(tf.matmul(fc1, weights['wd1']), biases['bd1'])
+    fc1 = tf.nn.relu(fc1)
+    # Apply Dropout
+    fc1 = tf.nn.dropout(fc1, dropout)
+    return fc1
+
+    # Output, class prediction
+    # out = tf.add(tf.matmul(fc1, weights['out']), biases['out'])
+    # return out
+
 write=write_attn if FLAGS.write_attn else write_no_attn
+
+
+# Store layers weight & bias
+weights = {
+    # 5x5 conv, 1 input, 32 outputs
+    'wc1': tf.Variable(tf.random_normal([5, 5, 1, 32]),name='wc1'),
+    # 5x5 conv, 32 inputs, 64 outputs
+    'wc2': tf.Variable(tf.random_normal([5, 5, 32, 64]),name='wc2'),
+    # fully connected, 7*7*64 inputs, 1024 outputs
+    'wd1': tf.Variable(tf.random_normal([7*7*64, conv_img_size]),name='wd1'),
+    # 1024 inputs, 10 outputs (class prediction)
+    # 'out': tf.Variable(tf.random_normal([1024, n_classes]),name='w_out')
+}
+
+biases = {
+    'bc1': tf.Variable(tf.random_normal([32]),name='bc1'),
+    'bc2': tf.Variable(tf.random_normal([64]),name='bc2'),
+    'bd1': tf.Variable(tf.random_normal([conv_img_size]),name='bd1'),
+    # 'out': tf.Variable(tf.random_normal([n_classes]),name='b_out')
+}
 
 ## STATE VARIABLES ## 
 
@@ -158,11 +230,16 @@ dec_state=lstm_dec.zero_state(batch_size, tf.float32)
 
 ## DRAW MODEL ## 
 
+# First CNN network 
+x_conv = conv_net(x, weights, biases, keep_prob)
+
 # construct the unrolled computational graph
 for t in range(T):
-    c_prev = tf.zeros((batch_size,img_size)) if t==0 else cs[t-1]
-    x_hat=x-tf.sigmoid(c_prev) # error image
-    r=read(x,x_hat,h_dec_prev)
+    c_prev = tf.zeros((batch_size,conv_img_size)) if t==0 else cs[t-1]
+    x_hat=x_conv-tf.sigmoid(c_prev) # error image
+    # x_hat=x-tf.sigmoid(c_prev) # error image
+    r=read(x_conv,x_hat,h_dec_prev)
+    # r=read(x,x_hat,h_dec_prev)
     h_enc,enc_state=encode(enc_state,tf.concat(1,[r,h_dec_prev]))
     z,mus[t],logsigmas[t],sigmas[t]=sampleQ(h_enc)
     h_dec,dec_state=decode(dec_state,z)
