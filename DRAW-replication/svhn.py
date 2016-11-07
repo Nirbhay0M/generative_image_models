@@ -58,13 +58,14 @@ class Dataset(object):
 	def next_batch(self,batch_size):
 		if self._i+batch_size < self._max:
 			self._i += batch_size
-			return self._X[self._i:self._i+batch_size],\
-					self._y[self._i:self._i+batch_size]
 		else:
 			# dif = self._max - self._i
 			# X = np.concatenate(self._X[self._i:])
-			self._i = 0
+			self._i = batch_size
 			self._num_epochs += 1
+		return self._X[self._i-batch_size:self._i],\
+				self._y[self._i-batch_size:self._i]
+
 
 if __name__ == '__main__':
 	a = SVHN()

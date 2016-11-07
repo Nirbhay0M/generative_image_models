@@ -65,11 +65,14 @@ def plotFilter(X):
 	return img
 
 if __name__ == '__main__':
-	prefix=sys.argv[1]
-	out_file=sys.argv[2]
+	out_file=sys.argv[1]
+	prefix=sys.argv[2]
+	# prefix = out_file
+
 	plot_filters = None
 	if len(sys.argv)>3:
 		plot_filters=bool(int(sys.argv[3]))
+
 
 	if plot_filters:
 		Kernels=np.load(out_file)
@@ -85,6 +88,7 @@ if __name__ == '__main__':
 		print "End!"
 	else:
 		[C,Lxs,Lzs]=np.load(out_file)
+		# print len(C)
 		T,batch_size,img_size=C.shape
 		X=1.0/(1.0+np.exp(-C)) # x_recons=sigmoid(canvas)
 		B=A=int(np.sqrt(img_size))
@@ -101,6 +105,7 @@ if __name__ == '__main__':
 				imgname='%s_%d.png' % (prefix,t) # you can merge using imagemagick, i.e. convert -delay 10 -loop 0 *.png mnist.gif
 				plt.savefig(imgname)
 				print(imgname)
+
 		f=plt.figure()
 		plt.plot(Lxs,label='Reconstruction Loss Lx')
 		plt.plot(Lzs,label='Latent Loss Lz')
