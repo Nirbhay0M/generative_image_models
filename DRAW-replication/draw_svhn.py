@@ -211,7 +211,6 @@ for t in range(T):
     h_dec_gen,dec_state_gen=decode(dec_state_gen,z_gen)
     cs_gen[t]=c_prev_gen+write(h_dec_gen)   
     
-
 ## LOSS FUNCTION ## 
 
 def binary_crossentropy(t,o):

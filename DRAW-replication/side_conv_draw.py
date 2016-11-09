@@ -21,6 +21,11 @@ tf.flags.DEFINE_boolean("restore",False, "restore model")
 
 tf.flags.DEFINE_boolean("force_restore",False, "force restore a model")
 tf.flags.DEFINE_string("restore_path","", "force resotre path")
+
+tf.flags.DEFINE_boolean("sdg",True, "Stochastic data generation")
+tf.flags.DEFINE_integer("gen",0, "Number of images to generate")
+n_gen_batches = 0
+
 FLAGS = tf.flags.FLAGS
 
 ## MODEL PARAMETERS ##
@@ -57,7 +62,10 @@ keep_prob = 0.5
 USE_ERROR_ONLY = False
 USE_PRIVY = True
 SAVE_CANVASSES = True
-USE_SDG = True
+USE_SDG = FLAGS.sdg #True
+
+n_gen_sdg = 100
+n_gen_batches = FLAGS.gen/batch_size #0
 
 ## BUILD MODEL ## 
 
@@ -286,7 +294,7 @@ cost=Lx+Lz+Lcnn
 # assert False
 
 ## Filter Variable Fetcher ##
-filter_kernels = tf.get_collection(tf.GraphKeys.VARIABLES, "conv2d")
+filter_kernels = tf.get_collection(tf.GraphKeys.VARIABLES, "conv1")
 
 ## OPTIMIZER ## 
 
@@ -319,12 +327,13 @@ else:
 
 print "Using ckpt file:",ckpt_file
 
-train_data = mnist.input_data.read_data_sets(mnist_directory, one_hot=True).train # binarized (0-1) mnist data
-test_data = mnist.input_data.read_data_sets(mnist_directory, one_hot=True).test # binarized (0-1) mnist test data
+mnist_data = mnist.input_data.read_data_sets(mnist_directory, one_hot=True)
+train_data = mnist_data.train # binarized (0-1) mnist data
+test_data = mnist_data.test # binarized (0-1) mnist test data
 
 # ckpt_file=os.path.join(FLAGS.data_dir,"save_"+str(FLAGS.save_suffix)+".ckpt")
-# filter_save_file = "conv_filters_"+str(FLAGS.save_suffix)+".npy"
-# filter_save_path = os.path.join(data_directory,filter_save_file)
+filter_save_file = "conv_filters.npy"
+filter_save_path = os.path.join(data_directory,filter_save_file)
 
 fetches=[]
 fetches.extend([Lx,Lz,Lcnn,train_op])
@@ -345,13 +354,15 @@ if FLAGS.restore or FLAGS.force_restore:
     print "Model restored! Save file:",ckpt_file
 
     all_filters = sess.run(filter_kernels)
-    # print "Number of filter variables:",len(all_filters)
+    print "Number of filter variables:",len(all_filters)
     print "Saving filter kernels..."
     np.save(filter_save_path,all_filters)
     print "Filter kernels saved in path:",filter_save_path
 
 else:
     print "Beginning training!"
+    print "Data directiory:\n",data_directory
+
     # assert False, "Halt before training starts!"
     try:
         for i in range(train_iters):
@@ -366,23 +377,28 @@ else:
     finally:
         save_path = saver.save(sess,ckpt_file)
         print("Model saved in file: %s" % saver.save(sess,ckpt_file))
-        sess.close()
-        assert False, "Training ended -> Exiting through assertion."
 
-    if SAVE_CANVASSES:
-        out_file=ckpt_file[:-5]+".train_time_canvas.npy"
-        np.save(out_file,[np.array(canvases),Lxs,Lzs])
-        print("SDG Images saved in file: %s" % out_file)
+    feed_dict={x:xtrain}
+    canvases = sess.run(cs,feed_dict)
+    out_file=ckpt_file[:-5]+".train_time_canvas.npy"
+    np.save(out_file,[np.array(canvases),Lxs,Lzs])
+    print("SDG Images saved in file: %s" % out_file)
 
+    sess.close()
+    assert False, "Training ended -> Exiting through assertion."
 
 ## TRAINING FINISHED ## 
 
 if n_gen_batches > 0:
     final_imgs = []
     for i in range(n_gen_batches):
-        xtest,_ = test_data.next_batch(batch_size)
-        feed_dict = {x:xtest}
-        canvases = sess.run(cs,feed_dict)
+        print "Generating Batch %d/%d"%(i+1,n_gen_batches)
+        if USE_SDG:
+            canvases = sess.run(cs_gen,{})
+        else:
+            xtest,_ = test_data.next_batch(batch_size)
+            feed_dict = {x:xtest}
+            canvases = sess.run(cs,feed_dict)
         last_canvas = canvases[-1]
         final_imgs.append(last_canvas)
         # print last_canvas.shape
@@ -397,13 +413,13 @@ if n_gen_batches > 0:
 # canvases=np.array(canvases) # T x batch x img_size
 # out_file=os.path.join(FLAGS.data_dir,ckpt_file+".npy")
 
-if USE_SDG:
+if USE_SDG and n_gen_batches == 0:
     print "Stochastic data generation phase!"
     print "n_gen_sdg: %d"%n_gen_sdg
     sg_images = []
     for i in range(1,n_gen_sdg,batch_size):
-        canvases = sess.run(cs_gen,{})
-        last_canvas = canvases[-1]
+        canvases_new = sess.run(cs_gen,{})
+        last_canvas = canvases_new[-1]
         sg_images.append(last_canvas)
 
     all_gen_imgs = np.concatenate(sg_images,axis=0)
@@ -414,8 +430,11 @@ if USE_SDG:
     print "SDG images saved in file: %s"%gen_file
     
     if SAVE_CANVASSES:
+        # xtest,_ = test_data.next_batch(batch_size)
+        # feed_dict={x:xtest}
+        # canvases = sess.run(cs,feed_dict)
         out_file=ckpt_file[:-5]+".sdg_time_canvas.npy"
-        np.save(out_file,[np.array(canvases),Lxs,Lzs])
+        np.save(out_file,[np.array(canvases_new),Lxs,Lzs])
         print("SDG Images saved in file: %s" % out_file)
 
 sess.close()
