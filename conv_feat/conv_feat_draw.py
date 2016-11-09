@@ -17,6 +17,9 @@ import os
 tf.flags.DEFINE_string("data_dir", "", "")
 tf.flags.DEFINE_boolean("read_attn", True, "enable attention for reader")
 tf.flags.DEFINE_boolean("write_attn",True, "enable attention for writer")
+tf.flags.DEFINE_boolean("restore",False, "force restore a model")
+tf.flags.DEFINE_string("ckpt","", "force resotre path")
+tf.flags.DEFINE_boolean("sdg",False, "Stochastic data generation")
 FLAGS = tf.flags.FLAGS
 
 ## MODEL PARAMETERS ## 
@@ -42,7 +45,7 @@ read_size = 2*read_n*read_n if FLAGS.read_attn else 2*conv_img_size
 write_size = write_n*write_n if FLAGS.write_attn else conv_img_size
 z_size=10 # QSampler output size
 T=10 # MNIST generation sequence length
-batch_size=100 # training minibatch size
+batch_size=4 # training minibatch size
 train_iters=20000
 learning_rate=1e-3 # learning rate for optimizer
 eps=1e-8 # epsilon for numerical stability
@@ -54,6 +57,9 @@ DO_SHARE=None # workaround for variable_scope(reuse=True)
 keep_prob = tf.placeholder(tf.float32) #dropout (keep probability)
 x = tf.placeholder(tf.float32,shape=(batch_size,img_size)) # input (batch_size * img_size)
 e=tf.random_normal((batch_size,z_size), mean=0, stddev=1) # Qsampler noise
+# e = [0]*T
+# for i in range(T):
+#     e[i]=tf.random_normal((batch_size,z_size), mean=0, stddev=1) # Qsampler noise
 lstm_enc = tf.nn.rnn_cell.LSTMCell(enc_size, state_is_tuple=True) # encoder Op
 lstm_dec = tf.nn.rnn_cell.LSTMCell(dec_size, state_is_tuple=True) # decoder Op
 
@@ -228,6 +234,9 @@ h_dec_prev=tf.zeros((batch_size,dec_size))
 enc_state=lstm_enc.zero_state(batch_size, tf.float32)
 dec_state=lstm_dec.zero_state(batch_size, tf.float32)
 
+cs_gen=[0]*T # SDG Canvasses
+dec_state_gen=lstm_dec.zero_state(batch_size, tf.float32)
+
 ## DRAW MODEL ## 
 
 # First CNN network 
@@ -235,6 +244,7 @@ x_conv = conv_net(x, weights, biases, keep_prob)
 
 # construct the unrolled computational graph
 for t in range(T):
+    c_prev_gen = tf.zeros((batch_size,img_size)) if t==0 else cs_gen[t-1]
     c_prev = tf.zeros((batch_size,conv_img_size)) if t==0 else cs[t-1]
     x_hat=x_conv-tf.sigmoid(c_prev) # error image
     # x_hat=x-tf.sigmoid(c_prev) # error image
@@ -246,6 +256,10 @@ for t in range(T):
     cs[t]=c_prev+write(h_dec) # store results
     h_dec_prev=h_dec
     DO_SHARE=True # from now on, share variables
+
+    z_gen=e
+    h_dec_gen,dec_state_gen=decode(dec_state_gen,z_gen)
+    cs_gen[t]=c_prev_gen+write(h_dec_gen)
 
 ## LOSS FUNCTION ## 
 
@@ -280,43 +294,71 @@ for i,(g,v) in enumerate(grads):
 train_op=optimizer.apply_gradients(grads)
 
 ## RUN TRAINING ## 
+if FLAGS.restore == False:
+    data_directory = os.path.join(FLAGS.data_dir, "mnist")
+    if not os.path.exists(data_directory):
+        os.makedirs(data_directory)
+    train_data = mnist.input_data.read_data_sets(data_directory, one_hot=True).train # binarized (0-1) mnist data
 
-data_directory = os.path.join(FLAGS.data_dir, "mnist")
-if not os.path.exists(data_directory):
-    os.makedirs(data_directory)
-train_data = mnist.input_data.read_data_sets(data_directory, one_hot=True).train # binarized (0-1) mnist data
+    fetches=[]
+    fetches.extend([Lx,Lz,train_op])
+    Lxs=[0]*train_iters
+    Lzs=[0]*train_iters
 
-fetches=[]
-fetches.extend([Lx,Lz,train_op])
-Lxs=[0]*train_iters
-Lzs=[0]*train_iters
+    sess=tf.InteractiveSession()
 
-sess=tf.InteractiveSession()
+    saver = tf.train.Saver() # saves variables learned during training
+    tf.initialize_all_variables().run()
+    #saver.restore(sess, "/tmp/draw/drawmodel.ckpt") # to restore from model, uncomment this line
 
-saver = tf.train.Saver() # saves variables learned during training
-tf.initialize_all_variables().run()
-#saver.restore(sess, "/tmp/draw/drawmodel.ckpt") # to restore from model, uncomment this line
+    for i in range(train_iters):
+        xtrain,_=train_data.next_batch(batch_size) # xtrain is (batch_size x img_size)
+        feed_dict={x:xtrain, keep_prob: dropout}
+        results=sess.run(fetches,feed_dict)
+        Lxs[i],Lzs[i],_=results
+        if i%100==0:
+            print("iter=%d : Lx: %f Lz: %f" % (i,Lxs[i],Lzs[i]))
 
-for i in range(train_iters):
-    xtrain,_=train_data.next_batch(batch_size) # xtrain is (batch_size x img_size)
-    feed_dict={x:xtrain, keep_prob: dropout}
-    results=sess.run(fetches,feed_dict)
-    Lxs[i],Lzs[i],_=results
-    if i%100==0:
-        print("iter=%d : Lx: %f Lz: %f" % (i,Lxs[i],Lzs[i]))
+    ## TRAINING FINISHED ## 
 
-## TRAINING FINISHED ## 
+    canvases=sess.run(cs,feed_dict) # generate some examples
+    canvases=np.array(canvases) # T x batch x img_size
 
-canvases=sess.run(cs,feed_dict) # generate some examples
-canvases=np.array(canvases) # T x batch x img_size
+    out_file=os.path.join(FLAGS.data_dir,"draw_data.npy")
+    np.save(out_file,[canvases,Lxs,Lzs])
+    print("Outputs saved in file: %s" % out_file)
 
-out_file=os.path.join(FLAGS.data_dir,"draw_data.npy")
-np.save(out_file,[canvases,Lxs,Lzs])
-print("Outputs saved in file: %s" % out_file)
+    ckpt_file=os.path.join(FLAGS.data_dir,"drawmodel.ckpt")
+    print("Model saved in file: %s" % saver.save(sess,ckpt_file))
 
-ckpt_file=os.path.join(FLAGS.data_dir,"drawmodel.ckpt")
-print("Model saved in file: %s" % saver.save(sess,ckpt_file))
+    sess.close()
 
-sess.close()
+    print('Done drawing! Have a nice day! :)')
+else:
+    sess=tf.InteractiveSession()
+    saver = tf.train.Saver()
+    ckpt_file = FLAGS.ckpt
+    saver.restore(sess, ckpt_file)
+    print "Stochastic data generation phase!"
+    sg_images = []
+    n_images = 200
+    # timages = []
+    # reduced the global batch size to 1/4
+    for i in range(n_images):
+        # e_val = sess.run(e, {})
+        # print e_val
+        canvases_new = sess.run(cs_gen,{})
+        last_canvas = canvases_new[-1]
+        sg_images.append(last_canvas)
 
-print('Done drawing! Have a nice day! :)')
+    all_gen_imgs = np.concatenate(sg_images,axis=0)
+    print "all_gen_imgs shape:",all_gen_imgs.shape
+    gen_file = ckpt_file[:-5]+".SDG2.npy"
+    np.save(gen_file,all_gen_imgs)
+    print "SDG images saved in file: %s"%gen_file
+
+    out_file=ckpt_file[:-5]+".sdg_time_canvas.npy"
+    Lxs=[0]*train_iters
+    Lzs=[0]*train_iters
+    np.save(out_file,[np.asarray(canvases_new),Lxs,Lzs])
+    print("SDG Timesteps saved in file: %s" % out_file)
