@@ -3,6 +3,7 @@
 
 import matplotlib
 import sys
+import os
 import numpy as np
 
 interactive=False # set to False if you want to write images to file
@@ -38,7 +39,9 @@ def xrecons_grid(X,B,A):
 
 if __name__ == '__main__':
 	out_file=sys.argv[1]
-	prefix=sys.argv[2]
+	# prefix=sys.argv[2]
+	prefix=os.path.dirname(out_file)+"/"
+
 	T = 1
 	C=np.load(out_file)
 	print C.shape
