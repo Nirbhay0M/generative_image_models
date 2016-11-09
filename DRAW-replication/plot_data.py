@@ -2,7 +2,7 @@
 # example usage: python plot_data.py noattn /tmp/draw/draw_data.npy
 
 import matplotlib
-import sys
+import sys,os
 import numpy as np
 
 interactive=False # set to False if you want to write images to file
@@ -66,8 +66,8 @@ def plotFilter(X):
 
 if __name__ == '__main__':
 	out_file=sys.argv[1]
-	prefix=sys.argv[2]
-	# prefix = out_file
+	# prefix=sys.argv[2]
+	prefix=os.path.dirname(out_file)+"/"
 
 	plot_filters = None
 	if len(sys.argv)>3:
