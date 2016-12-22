@@ -3,7 +3,7 @@ import sys
 from mnist import MNIST
 from math import log
 
-epsilon = 0.0000001
+epsilon = 0.000000001
 def entropy (gen, nn):
 	nll = 0
 	for i in range(len(gen)):
@@ -19,8 +19,7 @@ gen_images = gen_images[0:1000]
 # ts_data = mndata.load_testing()
 # gen_images = ts_data[0][0:1000]
 # gen_images = np.asarray(gen_images)
-
-gen_images = np.where(gen_images > 0, 1, 0)
+# gen_images = np.where(gen_images > 0, 1, 0)
 
 n_images = len(gen_images)
 

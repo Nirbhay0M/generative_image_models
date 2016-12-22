@@ -1,0 +1,24 @@
+file: data/GEN_images/orig.npy
+max error: 1989.433520
+min error: 20.723265
+average error: 820.123245
+std: 327.688750
+
+file: data/GEN_images/mid.npy
+max error: 1429.905342
+min error: 41.446531
+average error: 656.803187
+std: 267.901709
+
+file: data/GEN_images/cnn-feat.npy
+max error: 1637.138000
+min error: 20.723265
+average error: 625.283099
+std: 255.380155
+
+file: data/GEN_images/side-cnn.npy
+max error: 1823.647393
+min error: 41.446531
+average error: 791.297182
+std: 295.088059
+
